@@ -24,7 +24,11 @@ import (
 	"time"
 )
 
-const defaultIndex = "https://s3.amazonaws.com/rds.nsrl.nist.gov?list-type=2&prefix=RDS/current/"
+const (
+	defaultIndex           = "https://s3.amazonaws.com/rds.nsrl.nist.gov?list-type=2&prefix=RDS/current/"
+	defaultModernSourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern.zip"
+	defaultLegacySourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy.zip"
+)
 
 //go:embed openapi.json
 var openAPISpec []byte
@@ -78,7 +82,7 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 }
 
 func main() {
-	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: os.Getenv("NSRL_SOURCE_URL"), LegacySourceURL: os.Getenv("NSRL_LEGACY_SOURCE_URL"), IndexURL: env("NSRL_INDEX_URL", defaultIndex), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), Retry: durationEnv("NSRL_RETRY_INTERVAL", 5*time.Minute), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
+	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: env("NSRL_SOURCE_URL", defaultModernSourceURL), LegacySourceURL: env("NSRL_LEGACY_SOURCE_URL", defaultLegacySourceURL), IndexURL: env("NSRL_INDEX_URL", defaultIndex), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), Retry: durationEnv("NSRL_RETRY_INTERVAL", 5*time.Minute), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		slog.Error("create data directory", "error", err)
 		os.Exit(1)
