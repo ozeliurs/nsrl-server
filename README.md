@@ -1,6 +1,6 @@
 # NSRL Server
 
-A small Go service that discovers the newest **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets in NIST's public bucket, downloads them atomically, and serves the original ZIPs with HTTP range support. The databases are stored on a persistent volume and refreshed every 24 hours by default.
+A small Go service that downloads the **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets from NIST, installs them atomically, and serves the original ZIPs with HTTP range support. The databases are stored on a persistent volume and checked every 24 hours by default.
 
 ## Run
 
@@ -29,9 +29,9 @@ The initial multi-gigabyte downloads happen sequentially in the background. Unti
 | `NSRL_REFRESH_INTERVAL` | `24h` | How often to check NIST |
 | `NSRL_RETRY_INTERVAL` | `5m` | Retry delay after a discovery or download failure |
 | `NSRL_HTTP_TIMEOUT` | `6h` | Index/download request timeout |
-| `NSRL_INDEX_URL` | NIST's `RDS/current/` bucket listing | Alternate S3-compatible XML listing |
-| `NSRL_SOURCE_URL` | unset | Bypass discovery and download a fixed ZIP URL (useful for mirrors/testing) |
-| `NSRL_LEGACY_SOURCE_URL` | unset | Bypass discovery for the legacy ZIP URL |
+| `NSRL_INDEX_URL` | NIST's `RDS/current/` bucket listing | Alternate S3-compatible XML listing used when fixed sources are disabled |
+| `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern.zip` URL | Modern ZIP URL (override to use a mirror or another release) |
+| `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy.zip` URL | Legacy ZIP URL (override to use a mirror or another release) |
 
 For fixed sources, checks happen on the configured interval and each archive is downloaded only once while its persisted metadata matches. Delete `modern-metadata.json` or `legacy-metadata.json`, or change the corresponding source URL, to force replacement.
 
