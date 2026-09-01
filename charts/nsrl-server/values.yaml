@@ -44,9 +44,11 @@ persistence:
 
 config:
   refreshInterval: 24h
+  retryInterval: 5m
   httpTimeout: 6h
   indexURL: ""
   sourceURL: ""
+  legacySourceURL: ""
 
 resources:
   requests:

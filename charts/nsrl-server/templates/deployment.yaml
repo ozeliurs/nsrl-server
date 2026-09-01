@@ -46,6 +46,8 @@ spec:
               value: /data
             - name: NSRL_REFRESH_INTERVAL
               value: {{ .Values.config.refreshInterval | quote }}
+            - name: NSRL_RETRY_INTERVAL
+              value: {{ .Values.config.retryInterval | quote }}
             - name: NSRL_HTTP_TIMEOUT
               value: {{ .Values.config.httpTimeout | quote }}
             {{- with .Values.config.indexURL }}
@@ -54,6 +56,10 @@ spec:
             {{- end }}
             {{- with .Values.config.sourceURL }}
             - name: NSRL_SOURCE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.legacySourceURL }}
+            - name: NSRL_LEGACY_SOURCE_URL
               value: {{ . | quote }}
             {{- end }}
           ports:

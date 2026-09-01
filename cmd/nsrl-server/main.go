@@ -26,8 +26,8 @@ import (
 const defaultIndex = "https://s3.amazonaws.com/rds.nsrl.nist.gov?list-type=2&prefix=RDS/current/"
 
 type config struct {
-	Addr, DataDir, SourceURL, IndexURL string
-	Refresh, HTTPTimeout               time.Duration
+	Addr, DataDir, SourceURL, LegacySourceURL, IndexURL string
+	Refresh, Retry, HTTPTimeout                         time.Duration
 }
 
 type metadata struct {
@@ -45,7 +45,7 @@ type app struct {
 	cfg        config
 	client     *http.Client
 	mu         sync.RWMutex
-	meta       *metadata
+	databases  map[string]*metadata
 	refreshing bool
 	lastError  string
 	lastCheck  time.Time
@@ -63,7 +63,7 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	d, err := time.ParseDuration(v)
-	if err != nil {
+	if err != nil || d <= 0 {
 		slog.Warn("invalid duration; using default", "variable", key, "value", v)
 		return fallback
 	}
@@ -71,12 +71,12 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 }
 
 func main() {
-	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: os.Getenv("NSRL_SOURCE_URL"), IndexURL: env("NSRL_INDEX_URL", defaultIndex), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
+	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: os.Getenv("NSRL_SOURCE_URL"), LegacySourceURL: os.Getenv("NSRL_LEGACY_SOURCE_URL"), IndexURL: env("NSRL_INDEX_URL", defaultIndex), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), Retry: durationEnv("NSRL_RETRY_INTERVAL", 5*time.Minute), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		slog.Error("create data directory", "error", err)
 		os.Exit(1)
 	}
-	a := &app{cfg: cfg, client: &http.Client{Timeout: cfg.HTTPTimeout}}
+	a := &app{cfg: cfg, client: &http.Client{Timeout: cfg.HTTPTimeout}, databases: make(map[string]*metadata)}
 	a.loadMetadata()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -103,29 +103,38 @@ func (a *app) routes() http.Handler {
 	})
 	m.HandleFunc("GET /readyz", a.ready)
 	m.HandleFunc("GET /v1/status", a.status)
-	m.HandleFunc("GET /v1/nsrl", a.download)
-	m.HandleFunc("HEAD /v1/nsrl", a.download)
+	for _, dataset := range []string{"modern", "legacy"} {
+		m.HandleFunc("GET /v1/nsrl/"+dataset, a.download(dataset))
+		m.HandleFunc("HEAD /v1/nsrl/"+dataset, a.download(dataset))
+	}
+	// Preserve the original endpoint as an alias for the modern data set.
+	m.HandleFunc("GET /v1/nsrl", a.download("modern"))
+	m.HandleFunc("HEAD /v1/nsrl", a.download("modern"))
 	m.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"service":"nsrl-server","download":"/v1/nsrl","status":"/v1/status"}`)
+		io.WriteString(w, `{"service":"nsrl-server","downloads":{"modern":"/v1/nsrl/modern","legacy":"/v1/nsrl/legacy"},"status":"/v1/status"}`)
 	})
 	return m
 }
 
 func (a *app) ready(w http.ResponseWriter, _ *http.Request) {
 	a.mu.RLock()
-	filename := ""
-	if a.meta != nil {
-		filename = a.meta.Filename
+	files := make([]string, 0, 2)
+	for _, dataset := range []string{"modern", "legacy"} {
+		if m := a.databases[dataset]; m != nil {
+			files = append(files, m.Filename)
+		}
 	}
 	a.mu.RUnlock()
-	if filename == "" {
-		http.Error(w, "NSRL database is not available yet", http.StatusServiceUnavailable)
+	if len(files) != 2 {
+		http.Error(w, "NSRL databases are not available yet", http.StatusServiceUnavailable)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(a.cfg.DataDir, filename)); err != nil {
-		http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
-		return
+	for _, filename := range files {
+		if _, err := os.Stat(filepath.Join(a.cfg.DataDir, filename)); err != nil {
+			http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	io.WriteString(w, `{"status":"ready"}`)
@@ -135,46 +144,54 @@ func (a *app) status(w http.ResponseWriter, _ *http.Request) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"database": a.meta, "refreshing": a.refreshing, "last_check": a.lastCheck, "last_error": a.lastError})
+	_ = json.NewEncoder(w).Encode(map[string]any{"databases": a.databases, "refreshing": a.refreshing, "last_check": a.lastCheck, "last_error": a.lastError})
 }
 
-func (a *app) download(w http.ResponseWriter, r *http.Request) {
-	a.mu.RLock()
-	var m metadata
-	if a.meta != nil {
-		m = *a.meta
+func (a *app) download(dataset string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a.mu.RLock()
+		var m metadata
+		if a.databases[dataset] != nil {
+			m = *a.databases[dataset]
+		}
+		a.mu.RUnlock()
+		if m.Filename == "" {
+			http.Error(w, "NSRL database is not available yet", http.StatusServiceUnavailable)
+			return
+		}
+		f, err := os.Open(filepath.Join(a.cfg.DataDir, m.Filename))
+		if err != nil {
+			http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		downloadName := m.ArchiveName
+		if downloadName == "" { // Metadata written by versions before ArchiveName was added.
+			downloadName = m.Filename
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
+		w.Header().Set("ETag", `"sha256-`+m.SHA256+`"`)
+		http.ServeContent(w, r, m.Filename, m.LastModified, f)
 	}
-	a.mu.RUnlock()
-	if m.Filename == "" {
-		http.Error(w, "NSRL database is not available yet", http.StatusServiceUnavailable)
-		return
-	}
-	f, err := os.Open(filepath.Join(a.cfg.DataDir, m.Filename))
-	if err != nil {
-		http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	defer f.Close()
-	w.Header().Set("Content-Type", "application/zip")
-	downloadName := m.ArchiveName
-	if downloadName == "" { // Metadata written by versions before ArchiveName was added.
-		downloadName = m.Filename
-	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", downloadName))
-	w.Header().Set("ETag", `"sha256-`+m.SHA256+`"`)
-	http.ServeContent(w, r, m.Filename, m.LastModified, f)
 }
 
 func (a *app) updateLoop(ctx context.Context) {
-	a.refresh(ctx)
-	t := time.NewTicker(a.cfg.Refresh)
-	defer t.Stop()
 	for {
+		a.refresh(ctx)
+		a.mu.RLock()
+		failed := a.lastError != ""
+		a.mu.RUnlock()
+		wait := a.cfg.Refresh
+		if failed {
+			wait = a.cfg.Retry
+		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
-			a.refresh(ctx)
 		}
 	}
 }
@@ -184,22 +201,23 @@ func (a *app) refresh(ctx context.Context) {
 	a.refreshing = true
 	a.mu.Unlock()
 	defer func() { a.mu.Lock(); a.refreshing = false; a.lastCheck = time.Now().UTC(); a.mu.Unlock() }()
-	source, etag, modified, err := a.latest(ctx)
-	if err != nil {
-		a.setError(err)
-		return
-	}
-	a.mu.RLock()
-	current := a.meta
-	unchanged := current != nil && current.Source == source && (etag == "" || current.ETag == etag)
-	a.mu.RUnlock()
-	if unchanged {
-		a.setError(nil)
-		return
-	}
-	if err := a.fetch(ctx, source, etag, modified); err != nil {
-		a.setError(err)
-		return
+	for _, dataset := range []string{"modern", "legacy"} {
+		source, etag, modified, err := a.latest(ctx, dataset)
+		if err != nil {
+			a.setError(fmt.Errorf("%s: %w", dataset, err))
+			return
+		}
+		a.mu.RLock()
+		current := a.databases[dataset]
+		unchanged := current != nil && current.Source == source && (etag == "" || current.ETag == etag)
+		a.mu.RUnlock()
+		if unchanged {
+			continue
+		}
+		if err := a.fetch(ctx, dataset, source, etag, modified); err != nil {
+			a.setError(fmt.Errorf("%s: %w", dataset, err))
+			return
+		}
 	}
 	a.setError(nil)
 }
@@ -223,9 +241,13 @@ type listing struct {
 	} `xml:"Contents"`
 }
 
-func (a *app) latest(ctx context.Context) (string, string, time.Time, error) {
-	if a.cfg.SourceURL != "" {
-		return a.cfg.SourceURL, "", time.Time{}, nil
+func (a *app) latest(ctx context.Context, dataset string) (string, string, time.Time, error) {
+	sourceURL := a.cfg.SourceURL
+	if dataset == "legacy" {
+		sourceURL = a.cfg.LegacySourceURL
+	}
+	if sourceURL != "" {
+		return sourceURL, "", time.Time{}, nil
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.IndexURL, nil)
 	resp, err := a.client.Do(req)
@@ -243,12 +265,12 @@ func (a *app) latest(ctx context.Context) (string, string, time.Time, error) {
 	var candidates []int
 	for i, o := range list.Contents {
 		n := strings.ToLower(o.Key)
-		if strings.HasSuffix(n, "-modern.zip") && !strings.Contains(n, "minimal") {
+		if strings.HasSuffix(n, "-"+dataset+".zip") && !strings.Contains(n, "minimal") {
 			candidates = append(candidates, i)
 		}
 	}
 	if len(candidates) == 0 {
-		return "", "", time.Time{}, errors.New("NSRL index contains no modern database archive")
+		return "", "", time.Time{}, fmt.Errorf("NSRL index contains no %s database archive", dataset)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		a, b := list.Contents[candidates[i]], list.Contents[candidates[j]]
@@ -267,7 +289,7 @@ func (a *app) latest(ctx context.Context) (string, string, time.Time, error) {
 	return base.String(), strings.Trim(o.ETag, `"`), o.LastModified, nil
 }
 
-func (a *app) fetch(ctx context.Context, source, etag string, modified time.Time) error {
+func (a *app) fetch(ctx context.Context, dataset, source, etag string, modified time.Time) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -300,41 +322,50 @@ func (a *app) fetch(ctx context.Context, source, etag string, modified time.Time
 		modified = time.Now().UTC()
 	}
 	digest := hex.EncodeToString(h.Sum(nil))
-	storedName := digest[:16] + "-" + name
+	storedName := dataset + "-" + digest[:16] + "-" + name
 	final := filepath.Join(a.cfg.DataDir, storedName)
 	if err := os.Rename(tmpName, final); err != nil {
 		return err
 	}
 	m := &metadata{Source: source, Filename: storedName, ArchiveName: name, ETag: etag, SHA256: digest, Size: size, LastModified: modified, DownloadedAt: time.Now().UTC()}
 	b, _ := json.MarshalIndent(m, "", "  ")
-	if err := os.WriteFile(filepath.Join(a.cfg.DataDir, "metadata.json.tmp"), b, 0o640); err != nil {
+	metadataPath := filepath.Join(a.cfg.DataDir, dataset+"-metadata.json")
+	if err := os.WriteFile(metadataPath+".tmp", b, 0o640); err != nil {
 		_ = os.Remove(final)
 		return err
 	}
-	if err := os.Rename(filepath.Join(a.cfg.DataDir, "metadata.json.tmp"), filepath.Join(a.cfg.DataDir, "metadata.json")); err != nil {
+	if err := os.Rename(metadataPath+".tmp", metadataPath); err != nil {
 		_ = os.Remove(final)
 		return err
 	}
 	a.mu.Lock()
-	old := a.meta
-	a.meta = m
+	old := a.databases[dataset]
+	a.databases[dataset] = m
 	a.mu.Unlock()
 	if old != nil && old.Filename != storedName {
 		_ = os.Remove(filepath.Join(a.cfg.DataDir, old.Filename))
 	}
-	slog.Info("NSRL database updated", "filename", name, "bytes", strconv.FormatInt(size, 10), "sha256", m.SHA256)
+	slog.Info("NSRL database updated", "dataset", dataset, "filename", name, "bytes", strconv.FormatInt(size, 10), "sha256", m.SHA256)
 	return nil
 }
 
 func (a *app) loadMetadata() {
-	b, err := os.ReadFile(filepath.Join(a.cfg.DataDir, "metadata.json"))
-	if err != nil {
-		return
-	}
-	var m metadata
-	if json.Unmarshal(b, &m) == nil {
-		if _, err := os.Stat(filepath.Join(a.cfg.DataDir, m.Filename)); err == nil {
-			a.meta = &m
+	for _, dataset := range []string{"modern", "legacy"} {
+		path := filepath.Join(a.cfg.DataDir, dataset+"-metadata.json")
+		if dataset == "modern" {
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				path = filepath.Join(a.cfg.DataDir, "metadata.json")
+			}
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var m metadata
+		if json.Unmarshal(b, &m) == nil {
+			if _, err := os.Stat(filepath.Join(a.cfg.DataDir, m.Filename)); err == nil {
+				a.databases[dataset] = &m
+			}
 		}
 	}
 }
