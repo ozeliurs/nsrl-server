@@ -1,0 +1,7 @@
+The NSRL server is available inside the cluster at:
+  http://{{ include "nsrl-server.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+The pod becomes Ready only after the initial NSRL database download completes.
+Check progress with:
+  kubectl -n {{ .Release.Namespace }} port-forward deployment/{{ include "nsrl-server.fullname" . }} 8080:8080
+  curl http://127.0.0.1:8080/v1/status

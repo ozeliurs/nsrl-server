@@ -33,6 +33,11 @@ func TestFetchAndServe(t *testing.T) {
 	if err := a.fetch(context.Background(), archive.URL+"/RDS-modern.zip", "tag", time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	// Installing identical content again must not delete the content-addressed
+	// archive when cleaning up the previous version.
+	if err := a.fetch(context.Background(), archive.URL+"/RDS-modern.zip", "new-tag", time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	r := httptest.NewRequest(http.MethodGet, "/v1/nsrl", nil)
 	w := httptest.NewRecorder()
 	a.download(w, r)
@@ -44,5 +49,24 @@ func TestFetchAndServe(t *testing.T) {
 	}
 	if got := w.Header().Get("Content-Disposition"); got != `attachment; filename="RDS-modern.zip"` {
 		t.Fatalf("Content-Disposition = %q", got)
+	}
+}
+
+func TestReadinessRequiresDatabase(t *testing.T) {
+	a := app{cfg: config{DataDir: t.TempDir()}}
+	w := httptest.NewRecorder()
+	a.ready(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness without database = %d, want 503", w.Code)
+	}
+
+	if err := os.WriteFile(a.cfg.DataDir+"/database.zip", []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.meta = &metadata{Filename: "database.zip"}
+	w = httptest.NewRecorder()
+	a.ready(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("readiness with database = %d, want 200", w.Code)
 	}
 }

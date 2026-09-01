@@ -13,6 +13,7 @@ The initial multi-gigabyte download happens in the background. Until it complete
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness check |
+| `GET /readyz` | Readiness check; returns `200` only when a complete database is available |
 | `GET /v1/status` | Current version, size, SHA-256, refresh state, and last error |
 | `GET` or `HEAD /v1/nsrl` | Download the current ZIP; supports ranges and conditional requests |
 
@@ -37,5 +38,24 @@ NSRL_DATA_DIR=./data NSRL_SOURCE_URL=https://example.test/RDS-modern.zip go run 
 ```
 
 Images are built for AMD64 and ARM64 by GitHub Actions. Pull requests validate the image; pushes to `main` and version tags authenticate with `GITHUB_TOKEN` and publish to `ghcr.io/<owner>/<repository>`.
+
+## Kubernetes / Helm
+
+The included chart uses a persistent volume and deliberately separates probes:
+`/healthz` stays healthy while the initial database downloads, preventing a
+restart loop, while `/readyz` keeps the pod out of Service endpoints until the
+archive has been installed atomically.
+
+```sh
+helm upgrade --install nsrl-server ./charts/nsrl-server \
+  --namespace nsrl --create-namespace \
+  --set image.repository=ghcr.io/OWNER/nsrl-server \
+  --set image.tag=latest
+```
+
+The chart defaults to one replica, a `Recreate` deployment strategy, and a
+100 GiB `ReadWriteOnce` claim. Adjust `persistence.size` and
+`persistence.storageClass` for the cluster. An existing claim can be supplied
+with `persistence.existingClaim`.
 
 NSRL data is provided by NIST; consult NIST's NSRL download page for its documentation and notices.

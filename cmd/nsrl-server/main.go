@@ -101,6 +101,7 @@ func (a *app) routes() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"status":"ok"}`)
 	})
+	m.HandleFunc("GET /readyz", a.ready)
 	m.HandleFunc("GET /v1/status", a.status)
 	m.HandleFunc("GET /v1/nsrl", a.download)
 	m.HandleFunc("HEAD /v1/nsrl", a.download)
@@ -109,6 +110,25 @@ func (a *app) routes() http.Handler {
 		io.WriteString(w, `{"service":"nsrl-server","download":"/v1/nsrl","status":"/v1/status"}`)
 	})
 	return m
+}
+
+func (a *app) ready(w http.ResponseWriter, _ *http.Request) {
+	a.mu.RLock()
+	filename := ""
+	if a.meta != nil {
+		filename = a.meta.Filename
+	}
+	a.mu.RUnlock()
+	if filename == "" {
+		http.Error(w, "NSRL database is not available yet", http.StatusServiceUnavailable)
+		return
+	}
+	if _, err := os.Stat(filepath.Join(a.cfg.DataDir, filename)); err != nil {
+		http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	io.WriteString(w, `{"status":"ready"}`)
 }
 
 func (a *app) status(w http.ResponseWriter, _ *http.Request) {
@@ -299,7 +319,7 @@ func (a *app) fetch(ctx context.Context, source, etag string, modified time.Time
 	old := a.meta
 	a.meta = m
 	a.mu.Unlock()
-	if old != nil && old.Filename != name {
+	if old != nil && old.Filename != storedName {
 		_ = os.Remove(filepath.Join(a.cfg.DataDir, old.Filename))
 	}
 	slog.Info("NSRL database updated", "filename", name, "bytes", strconv.FormatInt(size, 10), "sha256", m.SHA256)
