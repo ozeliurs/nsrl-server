@@ -1,0 +1,75 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "NSRL Server API",
+    "version": "1.0.0",
+    "description": "Downloads and serves the current modern and legacy NIST NSRL archives."
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Check process liveness",
+        "operationId": "getHealth",
+        "responses": {"200": {"description": "The server process is healthy", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}}}
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Check database readiness",
+        "description": "Returns success only after both modern and legacy archives are installed.",
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {"description": "Both databases are ready", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}},
+          "503": {"$ref": "#/components/responses/Unavailable"}
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "summary": "Get download and database status",
+        "operationId": "getStatus",
+        "responses": {"200": {"description": "Current server status", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Status"}}}}}
+      }
+    },
+    "/v1/nsrl": {
+      "get": {"summary": "Download the modern archive", "description": "Backward-compatible alias for /v1/nsrl/modern.", "operationId": "downloadModernAlias", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}},
+      "head": {"summary": "Inspect the modern archive", "operationId": "headModernAlias", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}}
+    },
+    "/v1/nsrl/modern": {
+      "get": {"summary": "Download the modern archive", "operationId": "downloadModern", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "206": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}},
+      "head": {"summary": "Inspect the modern archive", "operationId": "headModern", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}}
+    },
+    "/v1/nsrl/legacy": {
+      "get": {"summary": "Download the legacy archive", "operationId": "downloadLegacy", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "206": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}},
+      "head": {"summary": "Inspect the legacy archive", "operationId": "headLegacy", "responses": {"200": {"$ref": "#/components/responses/Archive"}, "503": {"$ref": "#/components/responses/Unavailable"}}}
+    },
+    "/openapi.json": {
+      "get": {"summary": "Get this OpenAPI document", "operationId": "getOpenAPI", "responses": {"200": {"description": "OpenAPI 3.1 document", "content": {"application/json": {"schema": {"type": "object"}}}}}}
+    }
+  },
+  "components": {
+    "schemas": {
+      "Health": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string"}}},
+      "Database": {
+        "type": "object",
+        "required": ["source", "filename", "sha256", "size", "last_modified", "downloaded_at"],
+        "properties": {
+          "source": {"type": "string", "format": "uri"}, "filename": {"type": "string"}, "archive_name": {"type": "string"},
+          "etag": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "size": {"type": "integer", "format": "int64"},
+          "last_modified": {"type": "string", "format": "date-time"}, "downloaded_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "Status": {
+        "type": "object", "required": ["databases", "refreshing", "last_check", "last_error"],
+        "properties": {
+          "databases": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/Database"}},
+          "refreshing": {"type": "boolean"}, "last_check": {"type": "string", "format": "date-time"}, "last_error": {"type": "string"}
+        }
+      }
+    },
+    "responses": {
+      "Archive": {"description": "NSRL ZIP archive", "headers": {"Accept-Ranges": {"schema": {"type": "string"}}, "Content-Disposition": {"schema": {"type": "string"}}, "ETag": {"schema": {"type": "string"}}}, "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}},
+      "Unavailable": {"description": "The requested database is not installed", "content": {"text/plain": {"schema": {"type": "string"}}}}
+    }
+  }
+}
