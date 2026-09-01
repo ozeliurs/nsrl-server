@@ -15,6 +15,8 @@ The initial multi-gigabyte downloads happen sequentially in the background. Unti
 | `GET /healthz` | Liveness check |
 | `GET /readyz` | Readiness check; returns `200` only when both databases are available |
 | `GET /v1/status` | Current version, size, SHA-256, refresh state, and last error |
+| `GET /docs` | Interactive Swagger UI |
+| `GET /openapi.json` | OpenAPI 3.1 specification |
 | `GET` or `HEAD /v1/nsrl/modern` | Download the current modern ZIP; `/v1/nsrl` is an alias |
 | `GET` or `HEAD /v1/nsrl/legacy` | Download the current legacy ZIP |
 

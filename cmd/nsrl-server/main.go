@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
@@ -24,6 +25,12 @@ import (
 )
 
 const defaultIndex = "https://s3.amazonaws.com/rds.nsrl.nist.gov?list-type=2&prefix=RDS/current/"
+
+//go:embed openapi.json
+var openAPISpec []byte
+
+//go:embed docs.html
+var docsPage []byte
 
 type config struct {
 	Addr, DataDir, SourceURL, LegacySourceURL, IndexURL string
@@ -103,6 +110,15 @@ func (a *app) routes() http.Handler {
 	})
 	m.HandleFunc("GET /readyz", a.ready)
 	m.HandleFunc("GET /v1/status", a.status)
+	m.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		_, _ = w.Write(openAPISpec)
+	})
+	m.HandleFunc("GET /docs", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(docsPage)
+	})
 	for _, dataset := range []string{"modern", "legacy"} {
 		m.HandleFunc("GET /v1/nsrl/"+dataset, a.download(dataset))
 		m.HandleFunc("HEAD /v1/nsrl/"+dataset, a.download(dataset))

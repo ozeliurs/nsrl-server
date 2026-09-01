@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,6 +28,26 @@ func TestLatestSelectsRequestedArchive(t *testing.T) {
 	u, etag, _, err = a.latest(context.Background(), "legacy")
 	if err != nil || !strings.HasSuffix(u, "/RDS/current/RDS-new-legacy.zip") || etag != "legacy" {
 		t.Fatalf("legacy latest() = %q, %q, %v", u, etag, err)
+	}
+}
+
+func TestDocumentationEndpoints(t *testing.T) {
+	a := app{databases: make(map[string]*metadata)}
+	for _, tc := range []struct{ path, contentType string }{{"/docs", "text/html"}, {"/openapi.json", "application/json"}} {
+		w := httptest.NewRecorder()
+		a.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), tc.contentType) {
+			t.Errorf("GET %s = %d, %q", tc.path, w.Code, w.Header().Get("Content-Type"))
+		}
+		if tc.path == "/openapi.json" {
+			var document map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &document); err != nil {
+				t.Fatalf("invalid OpenAPI JSON: %v", err)
+			}
+			if document["openapi"] != "3.1.0" {
+				t.Errorf("OpenAPI version = %v", document["openapi"])
+			}
+		}
 	}
 }
 
