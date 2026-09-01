@@ -5,7 +5,7 @@ A small Go service that discovers the newest **modern and legacy** National Soft
 ## Run
 
 ```sh
-docker run --rm -p 8080:8080 -v nsrl-data:/data ghcr.io/OWNER/nsrl-server:latest
+docker run --rm -p 8080:8080 -v nsrl-data:/data ghcr.io/ozeliurs/nsrl-server:latest
 ```
 
 The initial multi-gigabyte downloads happen sequentially in the background. Until each one completes, its download endpoint returns `503` while the liveness endpoint remains available. Kubernetes readiness requires both archives.
@@ -53,9 +53,7 @@ archive has been installed atomically.
 
 ```sh
 helm upgrade --install nsrl-server ./charts/nsrl-server \
-  --namespace nsrl --create-namespace \
-  --set image.repository=ghcr.io/OWNER/nsrl-server \
-  --set image.tag=latest
+  --namespace nsrl --create-namespace
 ```
 
 The chart defaults to one replica, a `Recreate` deployment strategy, and a
