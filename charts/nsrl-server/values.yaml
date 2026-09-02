@@ -2,7 +2,9 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/ozeliurs/nsrl-server
-  pullPolicy: IfNotPresent
+  # The chart defaults to the mutable "latest" tag, so always check the
+  # registry rather than silently reusing an older cached server binary.
+  pullPolicy: Always
   tag: ""
 
 imagePullSecrets: []
@@ -46,7 +48,6 @@ config:
   refreshInterval: 24h
   retryInterval: 5m
   httpTimeout: 6h
-  indexURL: ""
   sourceURL: ""
   legacySourceURL: ""
 

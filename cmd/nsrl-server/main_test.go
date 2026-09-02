@@ -11,23 +11,18 @@ import (
 	"time"
 )
 
-func TestLatestSelectsRequestedArchive(t *testing.T) {
-	index := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("list-type") == "" {
-			t.Errorf("index query was lost")
+func TestLatestUsesFixedSources(t *testing.T) {
+	a := app{}
+	for dataset, want := range map[string]string{"modern": defaultModernSourceURL, "legacy": defaultLegacySourceURL} {
+		got, _, _, err := a.latest(context.Background(), dataset)
+		if err != nil || got != want {
+			t.Errorf("latest(%q) = %q, %v; want %q", dataset, got, err, want)
 		}
-		w.Header().Set("Content-Type", "application/xml")
-		_, _ = w.Write([]byte(`<ListBucketResult><Contents><Key>RDS/current/RDS-old-modern.zip</Key><LastModified>2025-01-01T00:00:00Z</LastModified><ETag>"old"</ETag></Contents><Contents><Key>RDS/current/RDS-new-modern.zip</Key><LastModified>2026-01-01T00:00:00Z</LastModified><ETag>"new"</ETag></Contents><Contents><Key>RDS/current/RDS-new-legacy.zip</Key><LastModified>2026-02-01T00:00:00Z</LastModified><ETag>"legacy"</ETag></Contents></ListBucketResult>`))
-	}))
-	defer index.Close()
-	a := app{cfg: config{IndexURL: index.URL + "?list-type=2"}, client: index.Client()}
-	u, etag, _, err := a.latest(context.Background(), "modern")
-	if err != nil || !strings.HasSuffix(u, "/RDS/current/RDS-new-modern.zip") || etag != "new" {
-		t.Fatalf("latest() = %q, %q, %v", u, etag, err)
 	}
-	u, etag, _, err = a.latest(context.Background(), "legacy")
-	if err != nil || !strings.HasSuffix(u, "/RDS/current/RDS-new-legacy.zip") || etag != "legacy" {
-		t.Fatalf("legacy latest() = %q, %q, %v", u, etag, err)
+	a.cfg.SourceURL = "https://mirror.test/modern.zip"
+	got, _, _, err := a.latest(context.Background(), "modern")
+	if err != nil || got != a.cfg.SourceURL {
+		t.Errorf("latest() override = %q, %v", got, err)
 	}
 }
 

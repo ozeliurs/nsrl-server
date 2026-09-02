@@ -50,10 +50,6 @@ spec:
               value: {{ .Values.config.retryInterval | quote }}
             - name: NSRL_HTTP_TIMEOUT
               value: {{ .Values.config.httpTimeout | quote }}
-            {{- with .Values.config.indexURL }}
-            - name: NSRL_INDEX_URL
-              value: {{ . | quote }}
-            {{- end }}
             {{- with .Values.config.sourceURL }}
             - name: NSRL_SOURCE_URL
               value: {{ . | quote }}
