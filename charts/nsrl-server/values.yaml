@@ -45,8 +45,6 @@ persistence:
   annotations: {}
 
 config:
-  refreshInterval: 24h
-  retryInterval: 5m
   httpTimeout: 6h
   sourceURL: ""
   legacySourceURL: ""
@@ -58,12 +56,18 @@ resources:
   limits:
     memory: 256Mi
 
+downloaderResources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# RWO storage supports one active pod. Recreate also prevents two processes from
-# modifying the same database metadata during an upgrade.
+# RWO storage supports one active pod.
 strategy:
   type: Recreate
 

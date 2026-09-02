@@ -1,6 +1,6 @@
 # NSRL Server
 
-A small Go service that downloads the **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets from NIST, installs them atomically, and serves the original ZIPs with HTTP range support. The databases are stored on a persistent volume and checked every 24 hours by default.
+A small Go service that serves the **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets with HTTP range support. In Kubernetes, a dedicated init container downloads and atomically installs both archives on the shared persistent volume before the server starts.
 
 ## Run
 
@@ -8,13 +8,13 @@ A small Go service that downloads the **modern and legacy** National Software Re
 docker run --rm -p 8080:8080 -v nsrl-data:/data ghcr.io/ozeliurs/nsrl-server:latest
 ```
 
-The initial multi-gigabyte downloads happen sequentially in the background. Until each one completes, its download endpoint returns `503` while the liveness endpoint remains available. Kubernetes readiness requires both archives.
+The container image includes separate `nsrl-download` and `nsrl-server` executables. The standalone Docker command above starts only the server, so populate the volume first with `docker run --rm -v nsrl-data:/data --entrypoint /usr/local/bin/nsrl-download ghcr.io/ozeliurs/nsrl-server:latest`. The Helm chart automates this step with an init container.
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /healthz` | Liveness check |
 | `GET /readyz` | Readiness check; returns `200` only when both databases are available |
-| `GET /v1/status` | Current version, size, SHA-256, refresh state, and last error |
+| `GET /v1/status` | Installed archive source, filename, size, and SHA-256 |
 | `GET /docs` | Interactive Swagger UI |
 | `GET /openapi.json` | OpenAPI 3.1 specification |
 | `GET` or `HEAD /v1/nsrl/modern` | Download the current modern ZIP; `/v1/nsrl` is an alias |
@@ -26,30 +26,25 @@ The initial multi-gigabyte downloads happen sequentially in the background. Unti
 | --- | --- | --- |
 | `NSRL_ADDR` | `:8080` | Listen address |
 | `NSRL_DATA_DIR` | `/data` | Persistent archive directory |
-| `NSRL_REFRESH_INTERVAL` | `24h` | How often to check NIST |
-| `NSRL_RETRY_INTERVAL` | `5m` | Retry delay after a discovery or download failure |
-<<<<<<< HEAD
 | `NSRL_HTTP_TIMEOUT` | `6h` | Archive download request timeout |
 | `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern.zip` URL | Modern ZIP URL (override to use a mirror or another release) |
 | `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy.zip` URL | Legacy ZIP URL (override to use a mirror or another release) |
 
-For fixed sources, checks happen on the configured interval and each archive is downloaded only once while its persisted metadata matches. Delete `modern-metadata.json` or `legacy-metadata.json`, or change the corresponding source URL, to force replacement.
+The source and timeout variables are used by `nsrl-download`; the address is used by `nsrl-server`, and both use the data directory. An existing archive is reused when its persisted metadata matches the configured source. Delete the corresponding metadata file, or change its source URL, to force replacement.
 
 ## Local development
 
 ```sh
 go test ./...
-NSRL_DATA_DIR=./data NSRL_SOURCE_URL=https://example.test/RDS-modern.zip go run ./cmd/nsrl-server
+NSRL_DATA_DIR=./data go run ./cmd/nsrl-download
+NSRL_DATA_DIR=./data go run ./cmd/nsrl-server
 ```
 
 Images are built for AMD64 and ARM64 by GitHub Actions. Pull requests validate the image; pushes to `main` and version tags authenticate with `GITHUB_TOKEN` and publish to `ghcr.io/<owner>/<repository>`.
 
 ## Kubernetes / Helm
 
-The included chart uses a persistent volume and deliberately separates probes:
-`/healthz` stays healthy while the initial database downloads, preventing a
-restart loop, while `/readyz` keeps the pod out of Service endpoints until the
-archive has been installed atomically.
+The included chart mounts one persistent volume in a download init container and the server container. Kubernetes does not start the server until `nsrl-download` has atomically installed both archives. If downloading fails, the init container exits non-zero and Kubernetes retries the pod initialization; the serving process never performs network downloads.
 
 ```sh
 helm upgrade --install nsrl-server ./charts/nsrl-server \

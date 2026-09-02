@@ -33,6 +33,31 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: download-databases
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/nsrl-download"]
+          env:
+            - name: NSRL_DATA_DIR
+              value: /data
+            - name: NSRL_HTTP_TIMEOUT
+              value: {{ .Values.config.httpTimeout | quote }}
+            {{- with .Values.config.sourceURL }}
+            - name: NSRL_SOURCE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.legacySourceURL }}
+            - name: NSRL_LEGACY_SOURCE_URL
+              value: {{ . | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.downloaderResources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
         - name: nsrl-server
           securityContext:
@@ -44,26 +69,10 @@ spec:
               value: ":8080"
             - name: NSRL_DATA_DIR
               value: /data
-            - name: NSRL_REFRESH_INTERVAL
-              value: {{ .Values.config.refreshInterval | quote }}
-            - name: NSRL_RETRY_INTERVAL
-              value: {{ .Values.config.retryInterval | quote }}
-            - name: NSRL_HTTP_TIMEOUT
-              value: {{ .Values.config.httpTimeout | quote }}
-            {{- with .Values.config.sourceURL }}
-            - name: NSRL_SOURCE_URL
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.config.legacySourceURL }}
-            - name: NSRL_LEGACY_SOURCE_URL
-              value: {{ . | quote }}
-            {{- end }}
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
-          # Liveness only checks the server process, so a multi-hour initial
-          # database download never causes Kubernetes to restart the pod.
           livenessProbe:
             httpGet:
               path: /healthz
@@ -71,8 +80,6 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
-          # Readiness keeps the pod out of Service endpoints until a complete,
-          # atomically-installed database is available.
           readinessProbe:
             httpGet:
               path: /readyz
