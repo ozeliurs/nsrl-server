@@ -28,8 +28,8 @@ The initial multi-gigabyte downloads happen sequentially in the background. Unti
 | `NSRL_DATA_DIR` | `/data` | Persistent archive directory |
 | `NSRL_REFRESH_INTERVAL` | `24h` | How often to check NIST |
 | `NSRL_RETRY_INTERVAL` | `5m` | Retry delay after a discovery or download failure |
-| `NSRL_HTTP_TIMEOUT` | `6h` | Index/download request timeout |
-| `NSRL_INDEX_URL` | NIST's `RDS/current/` bucket listing | Alternate S3-compatible XML listing used when fixed sources are disabled |
+<<<<<<< HEAD
+| `NSRL_HTTP_TIMEOUT` | `6h` | Archive download request timeout |
 | `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern.zip` URL | Modern ZIP URL (override to use a mirror or another release) |
 | `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy.zip` URL | Legacy ZIP URL (override to use a mirror or another release) |
 
@@ -57,7 +57,8 @@ helm upgrade --install nsrl-server ./charts/nsrl-server \
 ```
 
 The chart defaults to one replica, a `Recreate` deployment strategy, and a
-100 GiB `ReadWriteOnce` claim. Adjust `persistence.size` and
+100 GiB `ReadWriteOnce` claim. Because its default image tag is `latest`, it
+always checks the registry for an updated image. Adjust `persistence.size` and
 `persistence.storageClass` for the cluster. An existing claim can be supplied
 with `persistence.existingClaim`.
 

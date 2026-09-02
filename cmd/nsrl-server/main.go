@@ -6,17 +6,14 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +22,6 @@ import (
 )
 
 const (
-	defaultIndex           = "https://s3.amazonaws.com/rds.nsrl.nist.gov?list-type=2&prefix=RDS/current/"
 	defaultModernSourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern.zip"
 	defaultLegacySourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy.zip"
 )
@@ -37,8 +33,8 @@ var openAPISpec []byte
 var docsPage []byte
 
 type config struct {
-	Addr, DataDir, SourceURL, LegacySourceURL, IndexURL string
-	Refresh, Retry, HTTPTimeout                         time.Duration
+	Addr, DataDir, SourceURL, LegacySourceURL string
+	Refresh, Retry, HTTPTimeout               time.Duration
 }
 
 type metadata struct {
@@ -82,7 +78,7 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 }
 
 func main() {
-	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: env("NSRL_SOURCE_URL", defaultModernSourceURL), LegacySourceURL: env("NSRL_LEGACY_SOURCE_URL", defaultLegacySourceURL), IndexURL: env("NSRL_INDEX_URL", defaultIndex), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), Retry: durationEnv("NSRL_RETRY_INTERVAL", 5*time.Minute), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
+	cfg := config{Addr: env("NSRL_ADDR", ":8080"), DataDir: env("NSRL_DATA_DIR", "/data"), SourceURL: env("NSRL_SOURCE_URL", defaultModernSourceURL), LegacySourceURL: env("NSRL_LEGACY_SOURCE_URL", defaultLegacySourceURL), Refresh: durationEnv("NSRL_REFRESH_INTERVAL", 24*time.Hour), Retry: durationEnv("NSRL_RETRY_INTERVAL", 5*time.Minute), HTTPTimeout: durationEnv("NSRL_HTTP_TIMEOUT", 6*time.Hour)}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		slog.Error("create data directory", "error", err)
 		os.Exit(1)
@@ -253,60 +249,22 @@ func (a *app) setError(err error) {
 	}
 }
 
-type listing struct {
-	Contents []struct {
-		Key, ETag    string
-		LastModified time.Time
-		Size         int64
-	} `xml:"Contents"`
-}
-
-func (a *app) latest(ctx context.Context, dataset string) (string, string, time.Time, error) {
+func (a *app) latest(_ context.Context, dataset string) (string, string, time.Time, error) {
 	sourceURL := a.cfg.SourceURL
 	if dataset == "legacy" {
 		sourceURL = a.cfg.LegacySourceURL
 	}
-	if sourceURL != "" {
-		return sourceURL, "", time.Time{}, nil
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.IndexURL, nil)
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("read NSRL index: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", "", time.Time{}, fmt.Errorf("read NSRL index: HTTP %s", resp.Status)
-	}
-	var list listing
-	if err := xml.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("decode NSRL index: %w", err)
-	}
-	var candidates []int
-	for i, o := range list.Contents {
-		n := strings.ToLower(o.Key)
-		if strings.HasSuffix(n, "-"+dataset+".zip") && !strings.Contains(n, "minimal") {
-			candidates = append(candidates, i)
+	if sourceURL == "" {
+		switch dataset {
+		case "modern":
+			sourceURL = defaultModernSourceURL
+		case "legacy":
+			sourceURL = defaultLegacySourceURL
+		default:
+			return "", "", time.Time{}, fmt.Errorf("unknown NSRL dataset %q", dataset)
 		}
 	}
-	if len(candidates) == 0 {
-		return "", "", time.Time{}, fmt.Errorf("NSRL index contains no %s database archive", dataset)
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		a, b := list.Contents[candidates[i]], list.Contents[candidates[j]]
-		if a.LastModified.Equal(b.LastModified) {
-			return a.Key > b.Key
-		}
-		return a.LastModified.After(b.LastModified)
-	})
-	o := list.Contents[candidates[0]]
-	base, err := url.Parse(a.cfg.IndexURL)
-	if err != nil {
-		return "", "", time.Time{}, err
-	}
-	base.RawQuery = ""
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + o.Key
-	return base.String(), strings.Trim(o.ETag, `"`), o.LastModified, nil
+	return sourceURL, "", time.Time{}, nil
 }
 
 func (a *app) fetch(ctx context.Context, dataset, source, etag string, modified time.Time) error {
