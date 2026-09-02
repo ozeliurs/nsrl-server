@@ -28,6 +28,7 @@ The initial multi-gigabyte downloads happen sequentially in the background. Unti
 | `NSRL_DATA_DIR` | `/data` | Persistent archive directory |
 | `NSRL_REFRESH_INTERVAL` | `24h` | How often to check NIST |
 | `NSRL_RETRY_INTERVAL` | `5m` | Retry delay after a discovery or download failure |
+<<<<<<< HEAD
 | `NSRL_HTTP_TIMEOUT` | `6h` | Archive download request timeout |
 | `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern.zip` URL | Modern ZIP URL (override to use a mirror or another release) |
 | `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy.zip` URL | Legacy ZIP URL (override to use a mirror or another release) |

@@ -26,6 +26,15 @@ func TestLatestUsesFixedSources(t *testing.T) {
 	}
 }
 
+func TestDefaultSourcesUseCurrentRelease(t *testing.T) {
+	if defaultModernSourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern.zip" {
+		t.Errorf("default modern source = %q", defaultModernSourceURL)
+	}
+	if defaultLegacySourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy.zip" {
+		t.Errorf("default legacy source = %q", defaultLegacySourceURL)
+	}
+}
+
 func TestDocumentationEndpoints(t *testing.T) {
 	a := app{databases: make(map[string]*metadata)}
 	for _, tc := range []struct{ path, contentType string }{{"/docs", "text/html"}, {"/openapi.json", "application/json"}} {
