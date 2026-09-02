@@ -27,8 +27,8 @@ The container image includes separate `nsrl-download` and `nsrl-server` executab
 | `NSRL_ADDR` | `:8080` | Listen address |
 | `NSRL_DATA_DIR` | `/data` | Persistent archive directory |
 | `NSRL_HTTP_TIMEOUT` | `6h` | Archive download request timeout |
-| `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern.zip` URL | Modern ZIP URL (override to use a mirror or another release) |
-| `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy.zip` URL | Legacy ZIP URL (override to use a mirror or another release) |
+| `NSRL_SOURCE_URL` | NIST `RDS_2026.03.1_modern_minimal.zip` URL | Modern minimal ZIP URL (override to use a mirror or another release) |
+| `NSRL_LEGACY_SOURCE_URL` | NIST `RDS_2026.03.1_legacy_minimal.zip` URL | Legacy minimal ZIP URL (override to use a mirror or another release) |
 
 The source and timeout variables are used by `nsrl-download`; the address is used by `nsrl-server`, and both use the data directory. An existing archive is reused when its persisted metadata matches the configured source. Delete the corresponding metadata file, or change its source URL, to force replacement.
 

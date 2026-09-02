@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	defaultModernSourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern.zip"
-	defaultLegacySourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy.zip"
+	defaultModernSourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern_minimal.zip"
+	defaultLegacySourceURL = "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy_minimal.zip"
 )
 
 type metadata struct {

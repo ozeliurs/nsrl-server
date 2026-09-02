@@ -40,7 +40,7 @@ func TestFetchInstallsArchiveAndMetadata(t *testing.T) {
 }
 
 func TestDefaultSourcesUseCurrentRelease(t *testing.T) {
-	if defaultModernSourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern.zip" || defaultLegacySourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy.zip" {
+	if defaultModernSourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_modern_minimal.zip" || defaultLegacySourceURL != "https://s3.amazonaws.com/rds.nsrl.nist.gov/RDS/rds_2026.03.1/RDS_2026.03.1_legacy_minimal.zip" {
 		t.Fatal("default NSRL sources changed unexpectedly")
 	}
 }
