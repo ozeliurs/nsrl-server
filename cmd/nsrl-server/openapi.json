@@ -60,10 +60,9 @@
         }
       },
       "Status": {
-        "type": "object", "required": ["databases", "refreshing", "last_check", "last_error"],
+        "type": "object", "required": ["databases"],
         "properties": {
-          "databases": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/Database"}},
-          "refreshing": {"type": "boolean"}, "last_check": {"type": "string", "format": "date-time"}, "last_error": {"type": "string"}
+          "databases": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/Database"}}
         }
       }
     },

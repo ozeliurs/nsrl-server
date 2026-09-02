@@ -1,6 +1,6 @@
 apiVersion: v2
 name: nsrl-server
-description: Downloads and serves the current NIST NSRL database
+description: Downloads NSRL databases in an init container and serves them
 type: application
-version: 0.1.1
+version: 0.2.0
 appVersion: "latest"

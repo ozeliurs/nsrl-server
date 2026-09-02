@@ -5,7 +5,7 @@
     "replicaCount": {
       "type": "integer",
       "const": 1,
-      "description": "Exactly one replica is required because the server owns its database update lifecycle."
+      "description": "Exactly one replica is required for the ReadWriteOnce data volume."
     },
     "image": {
       "type": "object",
