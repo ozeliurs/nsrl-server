@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,14 +25,15 @@ const (
 )
 
 type metadata struct {
-	Source       string    `json:"source"`
-	Filename     string    `json:"filename"`
-	ArchiveName  string    `json:"archive_name,omitempty"`
-	ETag         string    `json:"etag,omitempty"`
-	SHA256       string    `json:"sha256"`
-	Size         int64     `json:"size"`
-	LastModified time.Time `json:"last_modified"`
-	DownloadedAt time.Time `json:"downloaded_at"`
+	Source           string    `json:"source"`
+	Filename         string    `json:"filename"`
+	DatabaseFilename string    `json:"database_filename,omitempty"`
+	ArchiveName      string    `json:"archive_name,omitempty"`
+	ETag             string    `json:"etag,omitempty"`
+	SHA256           string    `json:"sha256"`
+	Size             int64     `json:"size"`
+	LastModified     time.Time `json:"last_modified"`
+	DownloadedAt     time.Time `json:"downloaded_at"`
 }
 
 func env(key, fallback string) string {
@@ -78,7 +81,10 @@ func current(dataDir, dataset, source string) bool {
 	if json.Unmarshal(contents, &value) != nil || value.Source != source {
 		return false
 	}
-	_, err = os.Stat(filepath.Join(dataDir, value.Filename))
+	if _, err = os.Stat(filepath.Join(dataDir, value.Filename)); err != nil || value.DatabaseFilename == "" {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dataDir, value.DatabaseFilename))
 	return err == nil
 }
 
@@ -123,6 +129,11 @@ func fetch(ctx context.Context, client *http.Client, dataDir, dataset, source st
 	if err := os.Rename(tmpName, filepath.Join(dataDir, storedName)); err != nil {
 		return err
 	}
+	databaseFilename, err := extractDatabase(filepath.Join(dataDir, storedName), dataDir, dataset, digest)
+	if err != nil {
+		_ = os.Remove(filepath.Join(dataDir, storedName))
+		return err
+	}
 	now := time.Now().UTC()
 	modified := now
 	if header := resp.Header.Get("Last-Modified"); header != "" {
@@ -130,7 +141,7 @@ func fetch(ctx context.Context, client *http.Client, dataDir, dataset, source st
 			modified = parsed
 		}
 	}
-	value := metadata{Source: source, Filename: storedName, ArchiveName: name, ETag: resp.Header.Get("ETag"), SHA256: digest, Size: size, LastModified: modified, DownloadedAt: now}
+	value := metadata{Source: source, Filename: storedName, DatabaseFilename: databaseFilename, ArchiveName: name, ETag: resp.Header.Get("ETag"), SHA256: digest, Size: size, LastModified: modified, DownloadedAt: now}
 	contents, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
@@ -147,6 +158,49 @@ func fetch(ctx context.Context, client *http.Client, dataDir, dataset, source st
 	if previous.Filename != "" && previous.Filename != storedName {
 		_ = os.Remove(filepath.Join(dataDir, previous.Filename))
 	}
+	if previous.DatabaseFilename != "" && previous.DatabaseFilename != databaseFilename {
+		_ = os.Remove(filepath.Join(dataDir, previous.DatabaseFilename))
+	}
 	slog.Info("NSRL database installed", "dataset", dataset, "filename", name, "bytes", size, "sha256", digest)
 	return nil
+}
+
+func extractDatabase(archivePath, dataDir, dataset, digest string) (string, error) {
+	r, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return "", fmt.Errorf("open archive: %w", err)
+	}
+	defer r.Close()
+	for _, entry := range r.File {
+		ext := strings.ToLower(filepath.Ext(entry.Name))
+		if entry.FileInfo().IsDir() || (ext != ".db" && ext != ".sqlite" && ext != ".sqlite3") {
+			continue
+		}
+		source, err := entry.Open()
+		if err != nil {
+			return "", fmt.Errorf("open database in archive: %w", err)
+		}
+		name := dataset + "-" + digest[:16] + ext
+		tmp, err := os.CreateTemp(dataDir, ".nsrl-db-*.part")
+		if err != nil {
+			source.Close()
+			return "", err
+		}
+		_, copyErr := io.Copy(tmp, source)
+		closeErr := tmp.Close()
+		source.Close()
+		if copyErr != nil || closeErr != nil {
+			os.Remove(tmp.Name())
+			if copyErr != nil {
+				return "", fmt.Errorf("extract database: %w", copyErr)
+			}
+			return "", closeErr
+		}
+		if err := os.Rename(tmp.Name(), filepath.Join(dataDir, name)); err != nil {
+			os.Remove(tmp.Name())
+			return "", err
+		}
+		return name, nil
+	}
+	return "", errors.New("archive does not contain a SQLite database")
 }

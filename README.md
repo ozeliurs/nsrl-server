@@ -1,6 +1,6 @@
 # NSRL Server
 
-A small Go service that serves the **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets with HTTP range support. In Kubernetes, a dedicated init container downloads and atomically installs both archives on the shared persistent volume before the server starts.
+A small Go service that searches and serves the **modern and legacy** National Software Reference Library (NSRL) Reference Data Sets. In Kubernetes, a dedicated init container downloads both archives and extracts their SQLite databases on the shared persistent volume before the server starts.
 
 ## Run
 
@@ -15,6 +15,7 @@ The container image includes separate `nsrl-download` and `nsrl-server` executab
 | `GET /healthz` | Liveness check |
 | `GET /readyz` | Readiness check; returns `200` only when both databases are available |
 | `GET /v1/status` | Installed archive source, filename, size, and SHA-256 |
+| `GET /v1/search?hash=<hash>&dataset=modern` | Look up an MD5, SHA-1, or SHA-256 hash (`dataset` defaults to `modern`) |
 | `GET /docs` | Interactive Swagger UI |
 | `GET /openapi.json` | OpenAPI 3.1 specification |
 | `GET` or `HEAD /v1/nsrl/modern` | Download the current modern ZIP; `/v1/nsrl` is an alias |
@@ -39,6 +40,14 @@ go test ./...
 NSRL_DATA_DIR=./data go run ./cmd/nsrl-download
 NSRL_DATA_DIR=./data go run ./cmd/nsrl-server
 ```
+
+For example, look up a SHA-256 value with:
+
+```sh
+curl 'http://localhost:8080/v1/search?hash=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+```
+
+The response contains the matching database rows, including a `_table` field identifying the source table. Searches are schema-aware: the server discovers hash columns in the installed SQLite database, so it does not depend on a single NSRL release's table layout. At most 100 matches are returned.
 
 Images are built for AMD64 and ARM64 by GitHub Actions. Pull requests validate the image; pushes to `main` and version tags authenticate with `GITHUB_TOKEN` and publish to `ghcr.io/<owner>/<repository>`.
 

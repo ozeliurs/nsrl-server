@@ -3,7 +3,7 @@
   "info": {
     "title": "NSRL Server API",
     "version": "1.0.0",
-    "description": "Downloads and serves the current modern and legacy NIST NSRL archives."
+    "description": "Searches and serves the current modern and legacy NIST NSRL archives."
   },
   "paths": {
     "/healthz": {
@@ -29,6 +29,22 @@
         "summary": "Get download and database status",
         "operationId": "getStatus",
         "responses": {"200": {"description": "Current server status", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Status"}}}}}
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "summary": "Search NSRL by file hash",
+        "description": "Looks up an MD5, SHA-1, or SHA-256 value in hash columns discovered from the installed SQLite schema. Returns at most 100 rows.",
+        "operationId": "searchNSRL",
+        "parameters": [
+          {"name": "hash", "in": "query", "required": true, "schema": {"type": "string", "pattern": "^(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$"}},
+          {"name": "dataset", "in": "query", "required": false, "schema": {"type": "string", "enum": ["modern", "legacy"], "default": "modern"}}
+        ],
+        "responses": {
+          "200": {"description": "Search results", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SearchResponse"}}}},
+          "400": {"description": "Invalid hash or dataset"},
+          "503": {"$ref": "#/components/responses/Unavailable"}
+        }
       }
     },
     "/v1/nsrl": {
@@ -63,6 +79,15 @@
         "type": "object", "required": ["databases"],
         "properties": {
           "databases": {"type": "object", "additionalProperties": {"$ref": "#/components/schemas/Database"}}
+        }
+      },
+      "SearchResponse": {
+        "type": "object", "required": ["dataset", "hash", "count", "results"],
+        "properties": {
+          "dataset": {"type": "string", "enum": ["modern", "legacy"]},
+          "hash": {"type": "string"},
+          "count": {"type": "integer"},
+          "results": {"type": "array", "maxItems": 100, "items": {"type": "object", "additionalProperties": true}}
         }
       }
     },
