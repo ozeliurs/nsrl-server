@@ -27,14 +27,15 @@ type config struct {
 }
 
 type metadata struct {
-	Source       string    `json:"source"`
-	Filename     string    `json:"filename"`
-	ArchiveName  string    `json:"archive_name,omitempty"`
-	ETag         string    `json:"etag,omitempty"`
-	SHA256       string    `json:"sha256"`
-	Size         int64     `json:"size"`
-	LastModified time.Time `json:"last_modified"`
-	DownloadedAt time.Time `json:"downloaded_at"`
+	Source           string    `json:"source"`
+	Filename         string    `json:"filename"`
+	DatabaseFilename string    `json:"database_filename,omitempty"`
+	ArchiveName      string    `json:"archive_name,omitempty"`
+	ETag             string    `json:"etag,omitempty"`
+	SHA256           string    `json:"sha256"`
+	Size             int64     `json:"size"`
+	LastModified     time.Time `json:"last_modified"`
+	DownloadedAt     time.Time `json:"downloaded_at"`
 }
 
 type app struct {
@@ -77,6 +78,7 @@ func (a *app) routes() http.Handler {
 	})
 	m.HandleFunc("GET /readyz", a.ready)
 	m.HandleFunc("GET /v1/status", a.status)
+	m.HandleFunc("GET /v1/search", a.search)
 	m.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -95,7 +97,7 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("HEAD /v1/nsrl", a.download("modern"))
 	m.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"service":"nsrl-server","downloads":{"modern":"/v1/nsrl/modern","legacy":"/v1/nsrl/legacy"},"status":"/v1/status"}`)
+		io.WriteString(w, `{"service":"nsrl-server","search":"/v1/search?hash=<hash>","downloads":{"modern":"/v1/nsrl/modern","legacy":"/v1/nsrl/legacy"},"status":"/v1/status"}`)
 	})
 	return m
 }
@@ -105,13 +107,18 @@ func (a *app) ready(w http.ResponseWriter, _ *http.Request) {
 	for _, dataset := range []string{"modern", "legacy"} {
 		if m := a.databases[dataset]; m != nil {
 			files = append(files, m.Filename)
+			files = append(files, m.DatabaseFilename)
 		}
 	}
-	if len(files) != 2 {
+	if len(files) != 4 {
 		http.Error(w, "NSRL databases are not available yet", http.StatusServiceUnavailable)
 		return
 	}
 	for _, filename := range files {
+		if filename == "" {
+			http.Error(w, "NSRL search database is unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		if _, err := os.Stat(filepath.Join(a.cfg.DataDir, filename)); err != nil {
 			http.Error(w, "NSRL database is unavailable", http.StatusServiceUnavailable)
 			return
