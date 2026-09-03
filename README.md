@@ -57,4 +57,20 @@ always checks the registry for an updated image. Adjust `persistence.size` and
 `persistence.storageClass` for the cluster. An existing claim can be supplied
 with `persistence.existingClaim`.
 
+Ingress is disabled by default. Enable it and configure the ingress class and
+host for your cluster, for example:
+
+```sh
+helm upgrade --install nsrl-server ./charts/nsrl-server \
+  --namespace nsrl --create-namespace \
+  --set ingress.enabled=true \
+  --set ingress.className=nginx \
+  --set ingress.hosts[0].host=nsrl.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=Prefix
+```
+
+Use `ingress.annotations` for controller-specific settings and `ingress.tls`
+to configure TLS secrets and hosts.
+
 NSRL data is provided by NIST; consult NIST's NSRL download page for its documentation and notices.
