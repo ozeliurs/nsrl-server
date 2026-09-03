@@ -1,5 +1,12 @@
+{{- if .Values.ingress.enabled }}
+The NSRL server is exposed through the following ingress hosts:
+{{- range .Values.ingress.hosts }}
+  {{ if $.Values.ingress.tls }}https{{ else }}http{{ end }}://{{ .host }}{{ (index .paths 0).path }}
+{{- end }}
+{{- else }}
 The NSRL server is available inside the cluster at:
   http://{{ include "nsrl-server.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+{{- end }}
 
 The pod becomes Ready only after the initial NSRL database download completes.
 Check progress with:
